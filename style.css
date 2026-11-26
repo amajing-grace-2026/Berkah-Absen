@@ -288,3 +288,14 @@ a { color: var(--blue); }
   .go { min-width: 160px; padding-left: 18px; font-size: 15px; }
   .brandmark .t b { font-size: 26px; }
 }
+
+/* peta penentuan lokasi (admin) */
+.minimap { position: relative; }
+.minimap.big { height: 52vh; min-height: 320px; }
+.minimap.full { position: fixed; inset: 0; z-index: 1200; height: auto; border-radius: 0; margin: 0; border: 0; }
+.map-exp { position: absolute; z-index: 1000; right: 10px; bottom: 30px; width: 40px; height: 40px; border-radius: 8px; background: #fff; font-size: 22px; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+.leaflet-control-layers { border-radius: 10px !important; font-size: 13px; }
+.leaflet-control-layers-base label { padding: 2px 0; }
+.counter { font-size: 12px; color: var(--muted); text-align: right; margin-top: 4px; }
+.counter.over { color: var(--red); font-weight: 500; }
+.leaflet-control-attribution { font-size: 9px !important; }

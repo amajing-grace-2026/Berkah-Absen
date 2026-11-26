@@ -111,8 +111,26 @@
     m.innerHTML = html;
     document.body.appendChild(m);
     var close = function () { if (m.parentNode) m.parentNode.removeChild(m); };
+    bindCounters(m);
     m.addEventListener('click', function (e) { if (e.target === m && cls === 'sheet-wrap') close(); });
     return { el: m, close: close };
+  }
+  // penghitung karakter + textarea tumbuh otomatis untuk laporan panjang
+  function bindCounters(root) {
+    $$("textarea[maxlength]", root).forEach(function (t) {
+      var max = +t.getAttribute("maxlength"), c = document.createElement("div");
+      c.className = "counter";
+      t.insertAdjacentElement("afterend", c);
+      var upd = function () {
+        c.textContent = t.value.length.toLocaleString("id-ID") + " / " + max.toLocaleString("id-ID") + " karakter";
+        c.classList.toggle("over", t.value.length >= max);
+        t.style.height = "auto";
+        t.style.height = Math.min(t.scrollHeight + 2, window.innerHeight * 0.5) + "px";
+      };
+      t.addEventListener("input", upd);
+      t._upd = upd;
+      upd();
+    });
   }
   function sheet(title, body) {
     return modal('<div class="sheet"><div class="grip"></div><h2>' + esc(title) + '</h2>' + body + '</div>', 'sheet-wrap');
@@ -294,8 +312,19 @@
     });
     return best;
   }
-  function tiles(map) {
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  // mode: 'peta' (jalan) atau 'satelit' (foto udara + nama jalan). switcher = tampilkan tombol ganti tampilan.
+  function tiles(map, mode, switcher) {
+    var MAXZ = 21; // zoom lebih dekat dari ubin asli (di-perbesar otomatis)
+    var street = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxNativeZoom: 19, maxZoom: MAXZ, attribution: '© OpenStreetMap' });
+    var esri = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
+    var sat = L.layerGroup([
+      L.tileLayer(esri + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: MAXZ, attribution: 'Citra © Esri, Maxar, Earthstar Geographics' }),
+      L.tileLayer(esri + 'Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: MAXZ, opacity: .85 }),
+      L.tileLayer(esri + 'Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: MAXZ })
+    ]);
+    map.setMaxZoom(MAXZ);
+    (mode === 'satelit' ? sat : street).addTo(map);
+    if (switcher) L.control.layers({ 'Satelit': sat, 'Peta jalan': street }, null, { position: 'topright', collapsed: false }).addTo(map);
   }
 
   /* ================= router ================= */
@@ -528,9 +557,16 @@
       var m = modal('<div class="dlg"><img class="shot" src="' + dataUrl + '" alt="Foto">' +
         (akt ? '<label class="f" style="margin-top:16px"><span>Lokasi</span><input id="dLok" value="' + esc(place) + '" placeholder="Nama toko / tempat"></label>' : '') +
         '<label class="f" style="margin-top:' + (akt ? 0 : 16) + 'px"><span>Keterangan' + (akt ? ' *' : '') + '</span>' +
-        (akt ? '<textarea id="dKet" rows="4" placeholder="Contoh: PM | TUMPANG | 12.58&#10;DOI : …&#10;ACTION : …"></textarea>' : '<input id="dKet" placeholder="Keterangan (opsional)">') +
+        (akt ? '<textarea id="dKet" rows="8" maxlength="10000" placeholder="Contoh: PM | TUMPANG | 12.58&#10;DOI : …&#10;ACTION : …"></textarea>' : '<input id="dKet" maxlength="2000" placeholder="Keterangan (opsional)">') +
         '</label><div class="acts"><button data-x>Batal</button><button data-ok>Kirim</button></div></div>');
       if (akt && !place) reverseGeocode(snap.lat, snap.lng).then(function (a) { var el = $('#dLok', m.el); if (el && !el.value && a) el.value = a; });
+      // draf laporan panjang disimpan di HP agar tidak hilang bila dialog tertutup / aplikasi keluar
+      var draftKey = 'ba-draft-akt';
+      if (akt) {
+        var ta = $('#dKet', m.el), dr = lsGet(draftKey);
+        if (dr) { ta.value = dr; ta._upd(); toast('Draf laporan sebelumnya dipulihkan.'); }
+        ta.addEventListener('input', function () { lsSet(draftKey, ta.value); });
+      }
       $('[data-x]', m.el).onclick = m.close;
       $('[data-ok]', m.el).onclick = function () {
         var ket = $('#dKet', m.el).value.trim();
@@ -542,6 +578,7 @@
         loading(true, 'Mengirim foto & lokasi…');
         run(api(action, body)).then(function (r) {
           m.close();
+          if (akt) lsSet(draftKey, '');
           toast(akt ? 'Laporan aktivitas terkirim.' : r.message, 'ok', 4500);
           lsSet('ba-me', '');
           go(akt ? 'aktivitas' : 'home');
@@ -658,7 +695,7 @@
         return '<label class="f"><span>Jenis</span><select name="jenis" required><option>Izin</option><option>Sakit</option><option>Cuti</option></select></label>' +
           '<div class="row2"><label class="f"><span>Mulai</span><input type="date" name="mulai" value="' + today() + '" required></label>' +
           '<label class="f"><span>Selesai</span><input type="date" name="selesai" value="' + today() + '" required></label></div>' +
-          '<label class="f"><span>Alasan</span><textarea name="alasan" required></textarea></label>' + photoField('Lampiran (surat dokter, dll.)', false);
+          '<label class="f"><span>Alasan</span><textarea name="alasan" required maxlength="5000" rows="5"></textarea></label>' + photoField('Lampiran (surat dokter, dll.)', false);
       },
       card: function (r) {
         return reqCard(esc(r.jenis) + ' · ' + esc(r.hari) + ' hari', fmtDate(r.mulai) + (r.selesai !== r.mulai ? ' – ' + fmtDate(r.selesai) : ''), '<p>' + esc(r.alasan) + '</p>', r, [[r.foto, 'Lampiran']]);
@@ -673,7 +710,7 @@
         return '<label class="f"><span>Tanggal</span><input type="date" name="tanggal" value="' + today() + '" required></label>' +
           '<div class="row2"><label class="f"><span>Jam mulai</span><input type="time" name="jam_mulai" value="18:00" required></label>' +
           '<label class="f"><span>Jam selesai</span><input type="time" name="jam_selesai" value="20:00" required></label></div>' +
-          '<label class="f"><span>Keterangan pekerjaan</span><textarea name="keterangan" required></textarea></label>' + photoField('Foto bukti', false);
+          '<label class="f"><span>Keterangan pekerjaan</span><textarea name="keterangan" required maxlength="5000" rows="5"></textarea></label>' + photoField('Foto bukti', false);
       },
       card: function (r) {
         return reqCard(fmtDate(r.tanggal), esc(r.jam_mulai) + ' – ' + esc(r.jam_selesai) + ' (' + esc(r.durasi) + ')', '<p>' + esc(r.keterangan) + '</p>', r, [[r.foto, 'Bukti lembur']]);
@@ -688,7 +725,7 @@
         return '<label class="f"><span>Tanggal transaksi</span><input type="date" name="tanggal" value="' + today() + '" required></label>' +
           '<label class="f"><span>Kategori</span><select name="kategori">' + KATEGORI_REIMB.map(function (k) { return '<option>' + k + '</option>'; }).join('') + '</select></label>' +
           '<label class="f"><span>Nominal (Rp)</span><input name="nominal" inputmode="numeric" required placeholder="50000"></label>' +
-          '<label class="f"><span>Keterangan</span><textarea name="keterangan"></textarea></label>' + photoField('Foto struk / bukti', true);
+          '<label class="f"><span>Keterangan</span><textarea name="keterangan" maxlength="5000" rows="5"></textarea></label>' + photoField('Foto struk / bukti', true);
       },
       card: function (r) {
         return reqCard(rupiah(r.nominal), esc(r.kategori) + ' · ' + fmtDate(r.tanggal), r.keterangan ? '<p>' + esc(r.keterangan) + '</p>' : '', r, [[r.foto, 'Struk']]);
@@ -704,7 +741,7 @@
       form: function () {
         return '<label class="f"><span>Tanggal</span><input type="date" name="tanggal" value="' + addDays(today(), 1) + '" required></label>' +
           '<label class="f"><span>Pindah ke shift</span><select name="shift_id">' + shifts.map(function (s) { return '<option value="' + esc(s.id) + '">' + esc(s.nama + ' ' + s.masuk + '-' + s.pulang) + '</option>'; }).join('') + '</select></label>' +
-          '<label class="f"><span>Alasan</span><textarea name="alasan" required></textarea></label>';
+          '<label class="f"><span>Alasan</span><textarea name="alasan" required maxlength="5000" rows="5"></textarea></label>';
       },
       card: function (r) { return reqCard(fmtDate(r.tanggal), 'Ke shift ' + esc(r.shift), '<p>' + esc(r.alasan) + '</p>', r); }
     });
@@ -927,14 +964,14 @@
     var c = page('Lokasi Absen', '<div class="info-box">Absen masuk & pulang hanya bisa dilakukan dalam radius titik lokasi di bawah (bawaan <b>10 meter</b>). Jika lebih jauh, karyawan diberi tahu jaraknya.</div>' +
       '<div class="minimap" id="ovmap" style="height:220px"></div><div class="list-plain" style="margin:0" id="list"><div class="li muted">Memuat…</div></div>', { plus: function () { areaForm(null); } });
     var ov = L.map('ovmap', { zoomControl: false }).setView(DEFAULT_CENTER, 12);
-    tiles(ov);
+    tiles(ov, "satelit");
     var lay = L.layerGroup().addTo(ov);
     cleanups.push(function () { ov.remove(); });
     function load() {
       api('areas_list').then(function (rows) {
         areas = rows; lay.clearLayers();
-        rows.forEach(function (a) { L.circle([+a.lat, +a.lng], { radius: +a.radius, color: '#1565d8' }).addTo(lay); L.marker([+a.lat, +a.lng]).addTo(lay).bindTooltip(a.nama); });
-        if (rows.length) ov.fitBounds(L.latLngBounds(rows.map(function (a) { return [+a.lat, +a.lng]; })).pad(0.3), { maxZoom: 17 });
+        rows.forEach(function (a) { L.circle([+a.lat, +a.lng], { radius: +a.radius, color: "#ffeb3b", weight: 2, fillOpacity: .2 }).addTo(lay); L.marker([+a.lat, +a.lng]).addTo(lay).bindTooltip(a.nama); });
+        if (rows.length) ov.fitBounds(L.latLngBounds(rows.map(function (a) { return [+a.lat, +a.lng]; })).pad(0.3), { maxZoom: 19 });
         $('#list', c).innerHTML = rows.length ? rows.map(function (a) {
           return '<div class="li" data-id="' + esc(a.id) + '" style="cursor:pointer"><div class="av-s">📍</div><div class="grow"><b>' + esc(a.nama) + '</b><span>Radius ' + esc(a.radius) + ' m · ' + (+a.lat).toFixed(6) + ', ' + (+a.lng).toFixed(6) + (a.alamat ? '<br>' + esc(a.alamat) : '') + '</span></div><span class="muted">›</span></div>';
         }).join('') : '<div class="li muted">Belum ada lokasi. Ketuk + untuk menambah.</div>';
@@ -945,7 +982,7 @@
       var edit = !!a; a = a || { radius: 10 };
       var m = sheet(edit ? 'Edit Lokasi' : 'Tambah Lokasi Absen', '<form>' +
         '<label class="f"><span>Nama lokasi</span><input name="nama" required value="' + esc(a.nama || '') + '" placeholder="Contoh: Alibaba Store Kawi"></label>' +
-        '<div class="minimap" id="pmap"></div>' +
+        '<div class="minimap big" id="pmap"><button type="button" class="map-exp" id="mexp" aria-label="Perbesar peta">⛶</button></div><div class="hint" style="margin:-6px 0 10px">Cubit / tombol + untuk zoom lebih dekat. Ketuk atau geser pin untuk menaruh titik tepat di pintu toko.</div>' +
         '<div class="btns" style="margin-bottom:12px"><button type="button" class="btn ghost sm" id="myloc">📍 Pakai lokasi saya</button><button type="button" class="btn ghost sm" id="paste">Tempel link Maps</button></div>' +
         '<div class="row2"><label class="f"><span>Latitude</span><input name="lat" id="la" required inputmode="decimal" value="' + esc(a.lat || '') + '"></label>' +
         '<label class="f"><span>Longitude</span><input name="lng" id="lo2" required inputmode="decimal" value="' + esc(a.lng || '') + '"></label></div>' +
@@ -953,15 +990,17 @@
         '<label class="f"><span>Alamat / catatan (opsional)</span><input name="alamat" value="' + esc(a.alamat || '') + '"></label>' +
         '<button class="btn" type="submit">Simpan Lokasi</button>' + (edit ? '<button class="btn red" type="button" id="del" style="margin-top:10px">Hapus Lokasi</button>' : '') + '</form>');
       var start = a.lat ? [+a.lat, +a.lng] : DEFAULT_CENTER;
-      var pm = L.map($('#pmap', m.el)).setView(start, a.lat ? 18 : 13);
-      tiles(pm);
+      var pm = L.map($('#pmap', m.el)).setView(start, a.lat ? 20 : 13);
+      tiles(pm, "satelit", true);
+      L.DomEvent.disableClickPropagation($("#mexp", m.el));
+      $("#mexp", m.el).onclick = function () { $("#pmap", m.el).classList.toggle("full"); setTimeout(function () { pm.invalidateSize(); }, 50); };
       var mk = null, ci = null;
       function setPt(lat, lng, pan) {
         $('#la', m.el).value = (+lat).toFixed(7); $('#lo2', m.el).value = (+lng).toFixed(7);
         var r = +$('#rad', m.el).value || 10;
-        if (!mk) { mk = L.marker([lat, lng], { draggable: true }).addTo(pm); ci = L.circle([lat, lng], { radius: r }).addTo(pm); mk.on('dragend', function () { var p = mk.getLatLng(); setPt(p.lat, p.lng); }); }
+        if (!mk) { mk = L.marker([lat, lng], { draggable: true }).addTo(pm); ci = L.circle([lat, lng], { radius: r, color: "#ffeb3b", weight: 2, fillOpacity: .2 }).addTo(pm); mk.on('dragend', function () { var p = mk.getLatLng(); setPt(p.lat, p.lng); }); }
         mk.setLatLng([lat, lng]); ci.setLatLng([lat, lng]).setRadius(r);
-        if (pan) pm.setView([lat, lng], 18);
+        if (pan) pm.setView([lat, lng], 20);
       }
       if (a.lat) setPt(+a.lat, +a.lng);
       setTimeout(function () { pm.invalidateSize(); }, 250);

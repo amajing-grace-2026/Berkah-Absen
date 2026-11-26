@@ -36,6 +36,13 @@ var CORE = (function () {
 
   /* ---------- util ---------- */
   function str(v) { return v == null ? '' : String(v).trim(); }
+  // batas panjang teks (1 sel Google Sheet maks 50.000 karakter)
+  var MAX = { laporan: 10000, pengajuan: 5000, absen: 2000 };
+  function lim(v, max, label) {
+    var s = str(v);
+    if (s.length > max) fail(label + " terlalu panjang (" + s.length + " karakter, maksimal " + max + ").");
+    return s;
+  }
   function num(v) { var n = parseFloat(v); return isFinite(n) ? n : NaN; }
   function pick(o, keys) { var r = {}; keys.forEach(function (k) { r[k] = o[k]; }); return r; }
   function isDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s); }
@@ -216,6 +223,7 @@ var CORE = (function () {
       fail('Anda masih berjarak ' + fmtDist(best.dist) + ' dari titik absen "' + best.area.nama + '". Absen hanya bisa dalam radius ' + best.radius + ' meter. Silakan mendekat ke titik lokasi.', 'RANGE');
     }
     if (!b.photo) fail('Foto wajib diambil untuk absen.');
+    lim(b.keterangan, MAX.absen, 'Keterangan');
     var now = ctx.now();
     var row = ctx.db.all('Absensi').filter(function (r) { return r.user_id === u.id && r.tanggal === now.date; })[0];
     var jam = now.time.slice(0, 5);
@@ -230,7 +238,7 @@ var CORE = (function () {
       var rec = {
         id: ctx.uuid(), user_id: u.id, nama: u.nama, tanggal: now.date, shift: shift.nama + ' ' + shift.masuk + '-' + shift.pulang,
         jam_masuk: jam, lat_masuk: lat, lng_masuk: lng, akurasi_masuk: isFinite(acc) ? Math.round(acc) : '', area_masuk: best.area.nama,
-        jarak_masuk: Math.round(best.dist), foto_masuk: foto, ket_masuk: str(b.keterangan).slice(0, 500), status: status
+        jarak_masuk: Math.round(best.dist), foto_masuk: foto, ket_masuk: lim(b.keterangan, MAX.absen, "Keterangan"), status: status
       };
       ctx.db.insert('Absensi', rec);
       return { record: rec, message: 'Absen masuk berhasil pukul ' + jam + ' WIB (' + status + ').' };
@@ -242,7 +250,7 @@ var CORE = (function () {
     var foto2 = savePhoto(ctx, b.photo, u, 'Absensi', 'pulang');
     var patch = {
       jam_pulang: jam, lat_pulang: lat, lng_pulang: lng, akurasi_pulang: isFinite(acc) ? Math.round(acc) : '', area_pulang: best.area.nama,
-      jarak_pulang: Math.round(best.dist), foto_pulang: foto2, ket_pulang: str(b.keterangan).slice(0, 500), status: st
+      jarak_pulang: Math.round(best.dist), foto_pulang: foto2, ket_pulang: lim(b.keterangan, MAX.absen, "Keterangan"), status: st
     };
     ctx.db.update('Absensi', row.id, patch);
     for (var k in patch) row[k] = patch[k];
@@ -259,7 +267,7 @@ var CORE = (function () {
     var rec = {
       id: ctx.uuid(), user_id: u.id, nama: u.nama, tanggal: now.date, jam: now.time.slice(0, 5), lat: lat, lng: lng,
       akurasi: isFinite(num(b.acc)) ? Math.round(num(b.acc)) : '', lokasi: str(b.lokasi).slice(0, 200) || (lat.toFixed(6) + ', ' + lng.toFixed(6)),
-      keterangan: ket.slice(0, 2000), foto: savePhoto(ctx, b.photo, u, 'Aktivitas', 'aktivitas')
+      keterangan: lim(ket, MAX.laporan, "Keterangan"), foto: savePhoto(ctx, b.photo, u, 'Aktivitas', 'aktivitas')
     };
     ctx.db.insert('Aktivitas', rec);
     return { record: rec };
@@ -296,7 +304,7 @@ var CORE = (function () {
     }
     var rec = {
       id: ctx.uuid(), user_id: u.id, nama: u.nama, jenis: jenis, mulai: mulai, selesai: selesai, hari: hari,
-      alasan: str(b.alasan).slice(0, 1000), foto: savePhoto(ctx, b.photo, u, 'Izin', jenis.toLowerCase()),
+      alasan: lim(b.alasan, MAX.pengajuan, "Alasan"), foto: savePhoto(ctx, b.photo, u, 'Izin', jenis.toLowerCase()),
       status: 'Menunggu', catatan: '', diproses: '', dibuat: ctx.now().iso
     };
     ctx.db.insert('Izin', rec);
@@ -310,7 +318,7 @@ var CORE = (function () {
     if (!str(b.keterangan)) fail('Keterangan wajib diisi.');
     var rec = {
       id: ctx.uuid(), user_id: u.id, nama: u.nama, tanggal: tgl, jam_mulai: m, jam_selesai: s,
-      durasi: Math.floor(dur / 60) + ' jam ' + (dur % 60) + ' menit', keterangan: str(b.keterangan).slice(0, 1000),
+      durasi: Math.floor(dur / 60) + ' jam ' + (dur % 60) + ' menit', keterangan: lim(b.keterangan, MAX.pengajuan, "Keterangan"),
       foto: savePhoto(ctx, b.photo, u, 'Lembur', 'lembur'), status: 'Menunggu', catatan: '', diproses: '', dibuat: ctx.now().iso
     };
     ctx.db.insert('Lembur', rec);
@@ -325,7 +333,7 @@ var CORE = (function () {
     if (!b.photo) fail('Foto bukti/struk wajib dilampirkan.');
     var rec = {
       id: ctx.uuid(), user_id: u.id, nama: u.nama, tanggal: tgl, kategori: kat, nominal: nominal,
-      keterangan: str(b.keterangan).slice(0, 1000), foto: savePhoto(ctx, b.photo, u, 'Reimburse', kat.toLowerCase()),
+      keterangan: lim(b.keterangan, MAX.pengajuan, "Keterangan"), foto: savePhoto(ctx, b.photo, u, 'Reimburse', kat.toLowerCase()),
       status: 'Menunggu', catatan: '', diproses: '', dibuat: ctx.now().iso
     };
     ctx.db.insert('Reimburse', rec);
@@ -344,7 +352,7 @@ var CORE = (function () {
     if (!str(b.alasan)) fail('Alasan wajib diisi.');
     var rec = {
       id: ctx.uuid(), user_id: u.id, nama: u.nama, tanggal: tgl, shift_id: sh.id, shift: sh.nama + ' ' + sh.masuk + '-' + sh.pulang,
-      alasan: str(b.alasan).slice(0, 1000), status: 'Menunggu', catatan: '', diproses: '', dibuat: ctx.now().iso
+      alasan: lim(b.alasan, MAX.pengajuan, "Alasan"), status: 'Menunggu', catatan: '', diproses: '', dibuat: ctx.now().iso
     };
     ctx.db.insert('TukarShift', rec);
     return { record: rec };

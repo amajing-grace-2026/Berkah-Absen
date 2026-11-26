@@ -1,5 +1,5 @@
 /* Service worker: simpan kerangka aplikasi agar cepat dibuka. Data (API) selalu dari server. */
-var CACHE_NAME = 'berkah-absen-v1';
+var CACHE_NAME = 'berkah-absen-v2';
 var SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.json', 'brand/ikon.svg',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'];
 
